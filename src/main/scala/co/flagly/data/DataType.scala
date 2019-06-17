@@ -1,4 +1,4 @@
-package co.flagly.core
+package co.flagly.data
 
 sealed abstract class DataType(val name: String)
 

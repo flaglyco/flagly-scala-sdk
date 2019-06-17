@@ -1,4 +1,4 @@
-package co.flagly.core
+package co.flagly.codec
 
 trait Encoder[-A] { self =>
   def encode(input: A): String
@@ -9,7 +9,7 @@ trait Encoder[-A] { self =>
 object Encoder {
   def apply[A](implicit encoder: Encoder[A]): Encoder[A] = encoder
 
-  implicit class syntax[A](val input: A) {
-    def encode(implicit encoder: Encoder[A]): String = encoder.encode(input)
+  implicit class syntax[A](val input: A)(implicit encoder: Encoder[A]) {
+    def encode: String = encoder.encode(input)
   }
 }

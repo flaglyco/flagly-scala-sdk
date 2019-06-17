@@ -1,4 +1,4 @@
-package co.flagly.core
+package co.flagly.data
 
 import java.time.ZonedDateTime
 import java.util.UUID

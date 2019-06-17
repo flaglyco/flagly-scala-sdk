@@ -1,4 +1,4 @@
-package co.flagly.core
+package co.flagly.codec
 
 trait Decoder[+A] { self =>
   def decode(input: String): Option[A]
@@ -11,7 +11,7 @@ trait Decoder[+A] { self =>
 object Decoder {
   def apply[A](implicit decoder: Decoder[A]): Decoder[A] = decoder
 
-  implicit class syntax[A](val input: String) {
-    def decode(implicit decoder: Decoder[A]): Option[A] = decoder.decode(input)
+  implicit class syntax(val input: String) {
+    def decode[A](implicit decoder: Decoder[A]): Option[A] = decoder.decode(input)
   }
 }
