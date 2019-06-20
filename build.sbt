@@ -5,6 +5,7 @@ scalaVersion in ThisBuild := "2.12.8"
 lazy val `flagly-scala-sdk` = (project in file("."))
   .settings(
     libraryDependencies ++= Seq(
-      "org.scalatest" %% "scalatest" % "3.0.5" % Test
+      "co.flagly"     %% "flagly-core" % "0.1.0-SNAPSHOT",
+      "org.scalatest" %% "scalatest"   % "3.0.5" % Test
     )
   )
