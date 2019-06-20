@@ -1,4 +1,4 @@
-# Flagly Core
+# Flagly Scala SDK
 
 Flagly is a feature-flag/remote-configuration manager.
 
