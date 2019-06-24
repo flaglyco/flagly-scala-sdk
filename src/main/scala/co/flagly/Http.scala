@@ -17,8 +17,8 @@ class Http extends SttpApi {
       .response(asJson[JsValue])
       .send().flatMap { response =>
         response.body match {
-          case Left(error)        => Future.failed(FlaglyError.of(503, error))
-          case Right(Left(error)) => Future.failed(FlaglyError.of(503, error.message))
+          case Left(error)        => Future.failed(FlaglyError.of(error))
+          case Right(Left(error)) => Future.failed(FlaglyError.of(error.message))
           case Right(Right(js))   => Future.successful(js)
         }
       }
