@@ -3,15 +3,23 @@ package co.flagly
 import java.util.UUID
 
 import co.flagly.core.{Flag, FlaglyError}
-import co.flagly.core.FlagJson.flagReads
-import play.api.libs.json.JsValue
+import co.flagly.utils.JsonUtils
+import play.api.libs.json.{JsError, JsSuccess, JsValue, Reads}
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Try
 import scala.util.control.NonFatal
 
 class Flagly(config: SDKConfig, http: Http) {
-  def getFlag(id: UUID)(implicit ec: ExecutionContext): Future[Option[Flag]]     = internalGetFlag(http.get(s"${config.host}/flags/$id"))
-  def getFlag(name: String)(implicit ec: ExecutionContext): Future[Option[Flag]] = internalGetFlag(http.get(s"${config.host}/flags?name=$name"))
+  implicit val flagReads: Reads[Flag] = Reads[Flag] { json =>
+    Try(JsonUtils.fromJson[Flag](json.toString(), classOf[Flag])).fold(
+      t    => JsError(s"$json is not a valid Flag! ${t.getMessage}"),
+      flag => JsSuccess(flag)
+    )
+  }
+
+  def getFlag(id: UUID)(implicit ec: ExecutionContext): Future[Option[Flag]]     = internalGetFlag(http.get(s"${config.host}/flags/$id", config.token))
+  def getFlag(name: String)(implicit ec: ExecutionContext): Future[Option[Flag]] = internalGetFlag(http.get(s"${config.host}/flags?name=$name", config.token))
 
   def feature[B](id: UUID, default: Boolean)(enabledAction: => Future[B])(disabledAction: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(id), default, enabledAction, disabledAction)
   def feature[B](name: String, default: Boolean)(enabledAction: => Future[B])(disabledAction: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(name), default, enabledAction, disabledAction)
