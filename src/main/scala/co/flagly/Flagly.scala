@@ -13,8 +13,10 @@ class Flagly(config: SDKConfig, http: Http) {
   def getFlag(id: UUID)(implicit ec: ExecutionContext): Future[Option[Flag]]     = internalGetFlag(http.get(s"${config.host}/flags/$id"))
   def getFlag(name: String)(implicit ec: ExecutionContext): Future[Option[Flag]] = internalGetFlag(http.get(s"${config.host}/flags?name=$name"))
 
-  def useFlag[A](id: UUID)(action: Flag => A)(implicit ec: ExecutionContext): Future[Option[A]]     = internalUseFlag(getFlag(id), action)
-  def useFlag[A](name: String)(action: Flag => A)(implicit ec: ExecutionContext): Future[Option[A]] = internalUseFlag(getFlag(name), action)
+  def feature[B](id: UUID, default: Boolean)(enabledAction: => Future[B])(disabledAction: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(id), default, enabledAction, disabledAction)
+  def feature[B](name: String, default: Boolean)(enabledAction: => Future[B])(disabledAction: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(name), default, enabledAction, disabledAction)
+  def featureWithFailure[B](id: UUID, default: Boolean)(action: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(id), default, action, {throw FlaglyError.of("unavailable")})
+  def featureWithFailure[B](name: String, default: Boolean)(action: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(name), default, action, {throw FlaglyError.of("unavailable")})
 
   def isFlagEnabled(id: UUID, default: => Boolean)(implicit ec: ExecutionContext): Future[Boolean]     = internalIsFlagEnabled(getFlag(id), default)
   def isFlagEnabled(name: String, default: => Boolean)(implicit ec: ExecutionContext): Future[Boolean] = internalIsFlagEnabled(getFlag(name), default)
@@ -25,8 +27,13 @@ class Flagly(config: SDKConfig, http: Http) {
         Future.failed(FlaglyError.of(s"Cannot get flag!", t))
     }
 
-  private def internalUseFlag[A](future: Future[Option[Flag]], action: Flag => A)(implicit ec: ExecutionContext): Future[Option[A]] =
-    future.map(_.map(action)).recoverWith {
+  private def internalUseFlag[B](future: Future[Option[Flag]], default: Boolean, enabledAction: => Future[B], disabledAction: => Future[B])(implicit ec: ExecutionContext): Future[B] =
+    future.flatMap { flagOpt =>
+      val flag = flagOpt.map(_.value).getOrElse(default)
+
+      if(flag) enabledAction
+      else disabledAction
+    }.recoverWith {
       case NonFatal(t) =>
         Future.failed(FlaglyError.of(s"Cannot use flag!", t))
     }
