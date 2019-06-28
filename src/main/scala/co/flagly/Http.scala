@@ -14,7 +14,7 @@ class Http extends SttpApi {
   def get(url: String, token: String)(implicit ec: ExecutionContext): Future[JsValue] =
     http
       .get(uri"$url")
-      .header("X-Application-Token", token)
+      .header("Authorization", s"Bearer $token")
       .response(asJson[JsValue])
       .send().flatMap { response =>
         response.body match {
