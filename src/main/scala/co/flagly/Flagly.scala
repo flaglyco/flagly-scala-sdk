@@ -1,45 +1,53 @@
 package co.flagly
 
-import java.util.UUID
-
 import co.flagly.core.{Flag, FlaglyError}
-import co.flagly.core.FlagJson.flagReads
-import play.api.libs.json.JsValue
+import co.flagly.utils.JsonUtils
+import play.api.libs.json.{JsError, JsSuccess, Reads}
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Try
 import scala.util.control.NonFatal
 
 class Flagly(config: SDKConfig, http: Http) {
-  def getFlag(id: UUID)(implicit ec: ExecutionContext): Future[Option[Flag]]     = internalGetFlag(http.get(s"${config.host}/flags/$id"))
-  def getFlag(name: String)(implicit ec: ExecutionContext): Future[Option[Flag]] = internalGetFlag(http.get(s"${config.host}/flags?name=$name"))
+  implicit val flagReads: Reads[Flag] = Reads[Flag] { json =>
+    Try(JsonUtils.fromJson[Flag](json.toString(), classOf[Flag])).fold(
+      t    => JsError(s"$json is not a valid Flag! ${t.getMessage}"),
+      flag => JsSuccess(flag)
+    )
+  }
 
-  def feature[B](id: UUID, default: Boolean)(enabledAction: => Future[B])(disabledAction: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(id), default, enabledAction, disabledAction)
-  def feature[B](name: String, default: Boolean)(enabledAction: => Future[B])(disabledAction: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(name), default, enabledAction, disabledAction)
-  def featureWithFailure[B](id: UUID, default: Boolean)(action: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(id), default, action, {throw FlaglyError.of("unavailable")})
-  def featureWithFailure[B](name: String, default: Boolean)(action: => Future[B])(implicit ec: ExecutionContext): Future[B] = internalUseFlag(getFlag(name), default, action, {throw FlaglyError.of("unavailable")})
+  def getFlag(name: String)(implicit ec: ExecutionContext): Future[Option[Flag]] =
+    http
+      .get(s"${config.host}/flags/$name", config.token)
+      .map(_.asOpt[Flag])
+      .recoverWith {
+        case NonFatal(t) =>
+          Future.failed(FlaglyError.of(s"Cannot get flag!", t))
+      }
 
-  def isFlagEnabled(id: UUID, default: => Boolean)(implicit ec: ExecutionContext): Future[Boolean]     = internalIsFlagEnabled(getFlag(id), default)
-  def isFlagEnabled(name: String, default: => Boolean)(implicit ec: ExecutionContext): Future[Boolean] = internalIsFlagEnabled(getFlag(name), default)
+  def feature[A](name: String, default: Boolean)(enabledAction: => Future[A])(disabledAction: => Future[A])(implicit ec: ExecutionContext): Future[A] =
+    getFlag(name).flatMap { flagOpt =>
+      val enabled = flagOpt.map(_.value).getOrElse(default)
 
-  private def internalGetFlag(future: Future[JsValue])(implicit ec: ExecutionContext): Future[Option[Flag]] =
-    future.map(_.asOpt[Flag]).recoverWith {
-      case NonFatal(t) =>
-        Future.failed(FlaglyError.of(s"Cannot get flag!", t))
-    }
-
-  private def internalUseFlag[B](future: Future[Option[Flag]], default: Boolean, enabledAction: => Future[B], disabledAction: => Future[B])(implicit ec: ExecutionContext): Future[B] =
-    future.flatMap { flagOpt =>
-      val flag = flagOpt.map(_.value).getOrElse(default)
-
-      if(flag) enabledAction
-      else disabledAction
+      if (enabled) {
+        enabledAction
+      } else {
+        disabledAction
+      }
     }.recoverWith {
       case NonFatal(t) =>
         Future.failed(FlaglyError.of(s"Cannot use flag!", t))
     }
 
-  private def internalIsFlagEnabled(future: Future[Option[Flag]], default: => Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
-    future.map(_.map(f => f.value).getOrElse(default)).recoverWith {
+  def featureWithFailure[A](name: String, default: Boolean)(action: => Future[A])(implicit ec: ExecutionContext): Future[A] =
+    feature(name, default)(action) {
+      throw FlaglyError.of("Flag is disabled!")
+    }
+
+  def isFlagEnabled(name: String, default: => Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+    getFlag(name).map { flagOpt =>
+      flagOpt.map(_.value).getOrElse(default)
+    }.recoverWith {
       case NonFatal(_) =>
         Future.successful(default)
 

@@ -11,9 +11,10 @@ import scala.concurrent.{ExecutionContext, Future}
 class Http extends SttpApi {
   implicit val sttpBackend: SttpBackend[Future, Nothing] = AsyncHttpClientFutureBackend()
 
-  def get(url: String)(implicit ec: ExecutionContext): Future[JsValue] =
+  def get(url: String, token: String)(implicit ec: ExecutionContext): Future[JsValue] =
     http
       .get(uri"$url")
+      .header("Authorization", s"Bearer $token")
       .response(asJson[JsValue])
       .send().flatMap { response =>
         response.body match {
