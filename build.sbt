@@ -1,7 +1,7 @@
 lazy val `flagly-scala-sdk` = (project in file("."))
   .settings(
     libraryDependencies ++= Seq(
-      "co.flagly"                     % "flagly-core"                      % "0.2.0",
+      "co.flagly"                     % "flagly-core"                      % "0.2.2",
       "com.softwaremill.sttp.client" %% "core"                             % "2.0.0-RC3",
       "com.softwaremill.sttp.client" %% "async-http-client-backend-future" % "2.0.0-RC3",
       "com.softwaremill.sttp.client" %% "circe"                            % "2.0.0-RC3",
@@ -12,6 +12,8 @@ lazy val `flagly-scala-sdk` = (project in file("."))
 
 resolvers += Resolver.jcenterRepo
 
+scalaVersion         in ThisBuild := "2.13.1"
+crossScalaVersions   in ThisBuild := Seq("2.12.10", scalaVersion.value)
 description          in ThisBuild := "Scala SDK of Flagly"
 homepage             in ThisBuild := Some(url("https://flagly.co"))
 startYear            in ThisBuild := Some(2019)
@@ -28,3 +30,19 @@ publishArtifact in Test := false
 pomIncludeRepository    := { _ => false }
 bintrayOrganization     := Some("flaglyco")
 bintrayRepository       := "flagly-scala-sdk"
+
+import ReleaseTransformations._
+
+releaseProcess := Seq[ReleaseStep](
+  checkSnapshotDependencies,
+  inquireVersions,
+  runClean,
+  runTest,
+  setReleaseVersion,
+  commitReleaseVersion,
+  tagRelease,
+  releaseStepCommandAndRemaining("+publish"),
+  setNextVersion,
+  commitNextVersion,
+  pushChanges
+)
