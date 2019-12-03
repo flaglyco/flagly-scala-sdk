@@ -1,57 +1,46 @@
 package co.flagly
 
-import co.flagly.core.{Flag, FlaglyError}
+import co.flagly.core.Flag
 import co.flagly.utils.JsonUtils
-import play.api.libs.json.{JsError, JsSuccess, Reads}
+import dev.akif.e.{E, Maybe}
+import dev.akif.e.syntax._
+import io.circe.Decoder
+import sttp.client.circe.asJson
+import sttp.client.{DeserializationError, HttpError, NothingT, SttpBackend, UriContext, basicRequest}
+import sttp.model.{HeaderNames, StatusCode}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 import scala.util.control.NonFatal
 
-class Flagly(config: SDKConfig, http: Http) {
-  implicit val flagReads: Reads[Flag] = Reads[Flag] { json =>
-    Try(JsonUtils.fromJson[Flag](json.toString(), classOf[Flag])).fold(
-      t    => JsError(s"$json is not a valid Flag! ${t.getMessage}"),
-      flag => JsSuccess(flag)
-    )
-  }
-
-  def getFlag(name: String)(implicit ec: ExecutionContext): Future[Option[Flag]] =
-    http
-      .get(s"${config.host}/flags/$name", config.token)
-      .map(_.asOpt[Flag])
-      .recoverWith {
-        case NonFatal(t) =>
-          Future.failed(FlaglyError.of(s"Cannot get flag!", t))
-      }
-
-  def feature[A](name: String, default: Boolean)(enabledAction: => Future[A])(disabledAction: => Future[A])(implicit ec: ExecutionContext): Future[A] =
-    getFlag(name).flatMap { flagOpt =>
-      val enabled = flagOpt.map(_.value).getOrElse(default)
-
-      if (enabled) {
-        enabledAction
+class Flagly(val host: String, val token: String)(implicit ec: ExecutionContext, sttp: SttpBackend[Future, Nothing, NothingT]) {
+  def use[A](name: String)(ifDisabled: => A)(ifEnabled: => A): Future[Maybe[A]] =
+    getFlag(name).map { flag =>
+      if (flag.value()) {
+        ifEnabled.maybe
       } else {
-        disabledAction
+        ifDisabled.maybe
       }
     }.recoverWith {
-      case NonFatal(t) =>
-        Future.failed(FlaglyError.of(s"Cannot use flag!", t))
+      case e: E        => Future.successful(e.maybe[A])
+      case NonFatal(t) => Future.successful(E.of(StatusCode.InternalServerError.code, "flagly", s"Cannot check flag '$name'", t).maybe)
     }
 
-  def featureWithFailure[A](name: String, default: Boolean)(action: => Future[A])(implicit ec: ExecutionContext): Future[A] =
-    feature(name, default)(action) {
-      throw FlaglyError.of("Flag is disabled!")
-    }
+  private implicit val flagDecoder: Decoder[Flag] = Decoder.decodeJson.emapTry(json => Try(JsonUtils.fromJson[Flag](json.noSpaces, classOf[Flag])))
 
-  def isFlagEnabled(name: String, default: => Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
-    getFlag(name).map { flagOpt =>
-      flagOpt.map(_.value).getOrElse(default)
-    }.recoverWith {
-      case NonFatal(_) =>
-        Future.successful(default)
+  private def getFlag(name: String): Future[Flag] =
+    basicRequest
+      .header(HeaderNames.Authorization, s"Bearer $token")
+      .get(uri"$host/flags/$name")
+      .response(asJson[Flag])
+      .send()
+      .map { response =>
+        val e = E.of(StatusCode.InternalServerError.code, "flagly", s"Cannot check flag '$name'")
 
-      case t =>
-        Future.failed(FlaglyError.of(s"Cannot check if flag is enabled!", t))
-    }
+        response.body match {
+          case Left(HttpError(res))               => throw e.data("reason", "Flagly API returned invalid response").data("response", res)
+          case Left(DeserializationError(res, _)) => throw e.data("reason", "Cannot parse response as Flag").data("response", res)
+          case Right(flag)                        => flag
+        }
+      }
 }
